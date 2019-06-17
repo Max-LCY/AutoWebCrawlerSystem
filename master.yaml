@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: A spider system.
+Parameters:
+    S3URL:
+        Description: S3 URL of cloudformation stack yaml
+        Type: String
+
+Globals:
+  Function:
+    Runtime: python3.6 # language used at runtime
+    Timeout: 600 # timeout for a given lambda function execution
+    MemorySize: 128
+    CodeUri: .
+    
+Resources:
+    RunTask:
+        Type: 'AWS::Serverless::Function'
+        DependsOn: 
+        -  EcsCluster
+        -  TaskDef
+        Properties:
+            Handler: RunTask.lambda_handler
+            Description: Running task on schedule
+            Policies:
+              - AutoScalingFullAccess
+              - AmazonECS_FullAccess
+            Environment:
+                Variables:
+                    AUTOSCAL: !GetAtt EcsCluster.Outputs.AutoScalingGroup
+                    ECS: !GetAtt EcsCluster.Outputs.ClusterName
+                    TASKDEF: !GetAtt TaskDef.Outputs.HKTask
+            Events:
+                StartCrawlingData:
+                    Type: Schedule
+                    Properties:
+                        Schedule: cron(0 14 * * ? *)
+                        
+    StopTask:
+        Type: 'AWS::Serverless::Function'
+        DependsOn: 
+        -  EcsCluster
+        -  TaskDef
+        -  TaskStoppedEvent
+        Properties:
+            Handler: StopTask.lambda_handler
+            Description: Terminate ECS instance after task stopped
+            Policies:
+              - AutoScalingFullAccess
+            Environment:
+                Variables:
+                    AUTOSCAL: !GetAtt EcsCluster.Outputs.AutoScalingGroup
+            Events:
+                StopECSInstance:
+                    Type: SNS
+                    Properties:
+                        Topic: !Ref TaskStoppedEvent
+        
+    EcsCluster:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://s3.amazonaws.com/${S3URL}/infrastructure/ecs-cluster.yaml
+          
+    Database:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub https://s3.amazonaws.com/${S3URL}/infrastructure/database.yaml
+          
+    TaskDef:
+        Type: AWS::CloudFormation::Stack
+        DependsOn: Database
+        Properties:
+            TemplateURL: !Sub https://s3.amazonaws.com/${S3URL}/infrastructure/task.yaml
+            Parameters:
+                ElasticSearch: !GetAtt Database.Outputs.ElasticSearch
+                HKDynamoDB: !GetAtt Database.Outputs.Dynamodb
+                ECR: !Ref ECR
+                
+                
+    TaskStoppedEvent:
+        Type: AWS::SNS::Topic
+        Properties: 
+            TopicName: TaskStoppedEvent
+        
+    TaskStoppedMetricFilter:
+        Type: AWS::Logs::MetricFilter
+        DependsOn: TaskDef
+        Properties:
+            LogGroupName: !GetAtt TaskDef.Outputs.LogGroup
+            FilterPattern: "Spider closed"
+            MetricTransformations:
+              - 
+                MetricValue: 1
+                MetricNamespace: Spider
+                MetricName: Spiderstopped
+    
+    TaskStoppedAlert:
+        Type: AWS::CloudWatch::Alarm
+        DependsOn: TaskStoppedEvent
+        Properties:
+            AlarmActions: [!Ref TaskStoppedEvent]
+            MetricName: Spiderstopped
+            Namespace: Spider
+            Statistic: Sum
+            Period: 21600
+            EvaluationPeriods: 1
+            Threshold: 2
+            ComparisonOperator: GreaterThanOrEqualToThreshold
+            TreatMissingData: notBreaching
+            
+    ECR:
+        Type: AWS::ECR::Repository
+        Properties: 
+            RepositoryName: !Ref AWS::StackName

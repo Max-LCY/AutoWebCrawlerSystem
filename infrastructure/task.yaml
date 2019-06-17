@@ -1,0 +1,94 @@
+Description: >
+    Create ECS task definition 
+Parameters:
+    ElasticSearch:
+        Type: String
+        Description: ElasticSearch Host URL
+    
+    HKDynamoDB:
+        Type: String
+        Description: HKdocktor Table
+    
+    ECR:
+        Type: String
+        Description: ECR name
+Resources:
+    
+    HKdoctorTask:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            TaskRoleArn: !GetAtt ServiceRole.Arn
+            ExecutionRoleArn: !GetAtt ServiceRole.Arn
+            ContainerDefinitions:
+                - Name: hkdoctor-service
+                  Essential: true
+                  Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECR}:latest
+                  Memory: 128
+                  LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-group: !Ref AWS::StackName
+                        awslogs-region: !Ref AWS::Region
+                        awslogs-stream-prefix: ecs
+                  Environment:
+                    -  
+                      Name: ES
+                      Value: !Ref ElasticSearch
+                    -  
+                      Name: HKTABLE
+                      Value: !Ref HKDynamoDB
+                    -  
+                      Name: REGION
+                      Value: !Ref AWS::Region
+                  
+                    
+                    
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties: 
+            LogGroupName: !Ref AWS::StackName
+            RetentionInDays: 365  
+
+    ServiceRole: 
+        Type: AWS::IAM::Role
+        Properties: 
+            RoleName: !Sub ecs-service-${AWS::StackName}
+            Path: /
+            ManagedPolicyArns: 
+                - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+                - 'arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess'
+            AssumeRolePolicyDocument: 
+                Version: "2012-10-17"
+                Statement: 
+                  - 
+                    Effect: "Allow"
+                    Principal: 
+                      Service: 
+                        - "ecs-tasks.amazonaws.com"
+                    Action: 
+                      - "sts:AssumeRole"
+            Policies: 
+                - 
+                  PolicyName: !Sub ecs-service-${AWS::StackName}
+                  PolicyDocument: 
+                    Version: "2012-10-17"
+                    Statement: 
+                      - 
+                        Effect: "Allow"
+                        Action: 
+                          - "logs:CreateLogGroup"
+                          - "logs:CreateLogStream"
+                          - "logs:PutLogEvents"
+                          - "logs:DescribeLogStreams"
+                          - "es:*"
+                          - "ecr:*"
+                        Resource: "*"
+
+Outputs:
+    HKTask:
+        Description: The ARN of the taskDefinition
+        Value: !Ref HKdoctorTask
+        
+    LogGroup:
+        Description: Log group of ECS container
+        Value: !Ref CloudWatchLogsGroup

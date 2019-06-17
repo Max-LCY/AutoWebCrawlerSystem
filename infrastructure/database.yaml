@@ -1,0 +1,55 @@
+Description: >
+    Database and search engine creation
+Resources:
+    HKdoctorsTable:
+        Type: AWS::DynamoDB::Table
+        Properties: 
+            TableName: !Sub hkdoctor-site-${AWS::StackName}
+            Tags:
+              - Key: Name
+                Value: Project
+            AttributeDefinitions: 
+              - AttributeName: "url"
+                AttributeType: "S"
+            KeySchema: 
+              - AttributeName: "url"
+                KeyType: "HASH"
+            ProvisionedThroughput:
+                ReadCapacityUnits: "5"
+                WriteCapacityUnits: "5"
+    
+    ElasticSearch:
+        Type: AWS::Elasticsearch::Domain
+        Properties:
+            ElasticsearchClusterConfig:
+                DedicatedMasterEnabled: "false"
+                InstanceCount: "1"
+                ZoneAwarenessEnabled: "false"
+                InstanceType: "t2.small.elasticsearch"
+            ElasticsearchVersion: "6.3"
+            Tags:
+              - Key: Name
+                Value: Project
+            EBSOptions: 
+                EBSEnabled: true
+                VolumeSize: 10
+                VolumeType: "gp2"
+            AccessPolicies:
+                Version: "2012-10-17"
+                Statement:
+                  -
+                    Effect: "Allow"
+                    Principal: 
+                        AWS: "*"
+                    Action: "es:*"
+                    Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${AWS::StackName}/*
+                    Condition:
+                        IpAddress:
+                            aws:SourceIp: "116.49.67.25"
+Outputs:
+    Dynamodb:
+        Description: "HKTable"
+        Value: !Ref HKdoctorsTable
+    ElasticSearch:
+        Description: "Host URL"
+        Value: !GetAtt ElasticSearch.DomainEndpoint
