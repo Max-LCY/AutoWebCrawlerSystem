@@ -8,6 +8,6 @@ requests==2.20.0
 Scrapy==1.5.1
 requests-aws4auth==0.9
 jsonschema==2.6.0
-Twisted==19.2.1
+Twisted==22.4.0
 urllib3==1.24.2
 html5lib==1.0.1
